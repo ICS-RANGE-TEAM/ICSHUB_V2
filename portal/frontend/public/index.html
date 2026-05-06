@@ -165,7 +165,7 @@
   .left-subtitle { position: relative; z-index: 1; }
   .left-subtitle h2 {
     font-family: 'Rajdhani', sans-serif; font-size: 2.4rem; font-weight: 700;
-    color: #fff; line-height: 1.1; letter-spacing: 0.02em;
+    color: #ffffff; line-height: 1.1; letter-spacing: 0.02em;
   }
   .left-subtitle p {
     margin-top: 10px; font-family: 'Share Tech Mono', monospace;
@@ -246,7 +246,7 @@
   @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
 
   .topbar-left { display: flex; align-items: center; gap: 20px; }
-  .topbar-logo { height: 40px; background: #fff; border-radius: 3px; padding: 3px 6px; }
+  .topbar-logo { height: 40px;border-radius: 3px; padding: 3px 6px; }
   .topbar-divider { width: 1px; height: 24px; background: rgba(232,93,26,0.3); }
   .topbar-title { font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; color: var(--orange); letter-spacing: 0.2em; text-transform: uppercase; }
 
@@ -853,16 +853,15 @@ const DEFAULT_SERVICES = [
   {id:'router_r2',      name:'Routeur R2–R3',   tag:'Infrastructure',       desc:"Interface d'administration du routeur L2/L3.",                                       icon:'🔀', url:'', port:1443, network:'L2/L3'},
 ];
 
-function loadServices(){
+async function loadServicesFromAPI(){
   try {
-    const s = localStorage.getItem('portal_services');
-    if(s) return JSON.parse(s);
+    const res = await fetch('/api/services');
+    if(res.ok) return await res.json();
   } catch {}
   return JSON.parse(JSON.stringify(DEFAULT_SERVICES));
 }
-function saveServices(){ localStorage.setItem('portal_services', JSON.stringify(SERVICES)); }
 
-let SERVICES = loadServices();
+let SERVICES = [];
 let currentUser = null;
 
 function isSuperAdmin(){ return currentUser && currentUser.role === 'superadmin'; }
@@ -898,13 +897,15 @@ function showLoginError(msg){
 document.getElementById('password').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
 
 // =================== PORTAL ===================
-function showPortal(){
+async function showPortal(){
   document.getElementById('loginPage').classList.remove('active');
   document.getElementById('portalPage').classList.add('active');
   document.getElementById('userNameDisplay').textContent = currentUser.displayName || currentUser.username;
   document.getElementById('userAvatar').textContent = (currentUser.displayName || currentUser.username).charAt(0).toUpperCase();
   document.getElementById('newDisplayName').value = currentUser.displayName || '';
   if(isAdmin()) document.getElementById('navAdmin').style.display = '';
+  // Load services from server (shared persistence)
+  SERVICES = await loadServicesFromAPI();
   renderServices();
 }
 
@@ -965,7 +966,7 @@ function openSvcModal(mode, id=null){
   document.getElementById('serviceModal').classList.add('show');
 }
 
-function saveService(){
+async function saveService(){
   const id      = document.getElementById('svcModalId').value;
   const name    = document.getElementById('svcName').value.trim();
   const tag     = document.getElementById('svcTag').value.trim();
@@ -977,23 +978,48 @@ function saveService(){
 
   if(!name || !url){ showAlert(alertEl,'error','Titre et URL sont requis.'); return; }
 
-  if(id){
-    const idx = SERVICES.findIndex(s=>s.id===id);
-    if(idx>-1) SERVICES[idx] = {...SERVICES[idx], name, tag, desc, url, network, port, icon:currentIcon};
-  } else {
-    SERVICES.push({id:'svc_'+Date.now(), name, tag, desc, url, network, port, icon:currentIcon});
+  const body = { name, tag, desc, url, network, port, icon: currentIcon };
+
+  try {
+    if(id){
+      const res = await fetch('/api/services/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const resp = await res.json();
+      if(!res.ok) throw new Error(resp.error);
+      const idx = SERVICES.findIndex(s => s.id === id);
+      if(idx > -1) SERVICES[idx] = { ...SERVICES[idx], ...body };
+    } else {
+      const res = await fetch('/api/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const resp = await res.json();
+      if(!res.ok) throw new Error(resp.error);
+      SERVICES.push(resp.service);
+    }
+    closeModal('serviceModal');
+    renderServices();
+  } catch(e){
+    showAlert(alertEl, 'error', e.message);
   }
-  saveServices();
-  closeModal('serviceModal');
-  renderServices();
 }
 
-function deleteService(id){
-  const s = SERVICES.find(x=>x.id===id);
-  if(!s || !confirm(`Supprimer "${s.name}" ?`)) return;
-  SERVICES = SERVICES.filter(x=>x.id!==id);
-  saveServices();
-  renderServices();
+async function deleteService(id){
+  const s = SERVICES.find(x => x.id === id);
+  if(!s || !confirm('Supprimer "' + s.name + '" ?')) return;
+  try {
+    const res = await fetch('/api/services/' + id, { method: 'DELETE' });
+    const resp = await res.json();
+    if(!res.ok) throw new Error(resp.error);
+    SERVICES = SERVICES.filter(x => x.id !== id);
+    renderServices();
+  } catch(e){
+    alert('Erreur : ' + e.message);
+  }
 }
 
 // =================== NAVIGATION ===================
@@ -1016,6 +1042,7 @@ async function doLogout(){
   document.getElementById('password').value='';
   document.getElementById('loginError').classList.remove('show');
   document.getElementById('navAdmin').style.display='none';
+  SERVICES=[];
   showSection('portal');
 }
 
@@ -1138,7 +1165,7 @@ function showAlert(el,type,msg){
 (async()=>{
   try {
     const res = await fetch('/api/me');
-    if(res.ok){ const data=await res.json(); currentUser=data.user; showPortal(); }
+    if(res.ok){ const data=await res.json(); currentUser=data.user; await showPortal(); }
   } catch {}
 })();
 </script>
