@@ -15,7 +15,7 @@ import {
 import { Subject, Subscription, take } from 'rxjs';
 import { ChangeDetectorRef } from '@angular/core';
 
-import { Event, GaugeEvent, GaugeEventActionType, GaugeSettings, GaugeProperty, GaugeEventType, GaugeRangeProperty, GaugeStatus, Hmi, View, ViewType, Variable, ZoomModeType, InputOptionType, DocAlignType, DictionaryGaugeSettings, GaugeEventRelativeFromType, ViewEventType, InputActionEscType, IPropertyVariable } from '../_models/hmi';
+import { Event, GaugeEvent, GaugeEventActionType, GaugeSettings, GaugeProperty, GaugeEventType, GaugeRangeProperty, GaugeStatus, Hmi, View, ViewType, Variable, ZoomModeType, InputOptionType, DocAlignType, DictionaryGaugeSettings, GaugeEventRelativeFromType, ViewEventType, InputActionEscType, IPropertyVariable, DocProfile } from '../_models/hmi';
 import { GaugesManager } from '../gauges/gauges.component';
 import { Utils } from '../_helpers/utils';
 import { ScriptParam, SCRIPT_PARAMS_MAP, ScriptParamType } from '../_models/script';
@@ -28,7 +28,7 @@ import { HmiService } from '../_services/hmi.service';
 import { EndPointApi } from '../_helpers/endpointapi';
 import { HtmlSelectComponent } from '../gauges/controls/html-select/html-select.component';
 import { FuxaViewDialogComponent, FuxaViewDialogData } from './fuxa-view-dialog/fuxa-view-dialog.component';
-import { LegacyDialogPosition as DialogPosition, MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
+import { DialogPosition as DialogPosition, MatDialog as MatDialog } from '@angular/material/dialog';
 import { WebcamPlayerDialogComponent, WebcamPlayerDialogData } from '../gui-helpers/webcam-player/webcam-player-dialog/webcam-player-dialog.component';
 import { DevicesUtils, PlaceholderDevice, Tag } from '../_models/device';
 import { LanguageService } from '../_services/language.service';
@@ -146,8 +146,9 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
-    private loadVariableMapping(variablesMapped?: any) {
+    public loadVariableMapping(variablesMapped?: any) {
         try {
+            this.plainVariableMapping = {};
             if (variablesMapped) {
                 this.variablesMapping = variablesMapped;
             }
@@ -187,7 +188,22 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
      */
     public loadHmi(view: View, legacyProfile?: boolean) {
         this.viewLoaded = false;
+        this.viewRenderDelay = 0;
         if (this.loadOk || !view) {
+            this.viewLoaded = true;
+            return;
+        }
+        if (this.projectService.isViewLazy(view)) {
+            this.resolveView(view).then(resolvedView => {
+                this.loadResolvedHmi(resolvedView, legacyProfile);
+            });
+            return;
+        }
+        this.loadResolvedHmi(this.normalizeView(view), legacyProfile);
+    }
+
+    private loadResolvedHmi(view: View, legacyProfile?: boolean) {
+        if (!view) {
             this.viewLoaded = true;
             return;
         }
@@ -211,13 +227,16 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
                 if (view.type === this.cardViewType || view.type === ViewType.maps) {
                     this.ongoto.emit(view.id);
                     return;
+                } else if (typeof view.svgcontent !== 'string') {
+                    console.warn(`View '${view.name || view.id}' has no SVG content. Render skipped.`);
+                    return;
                 } else {
                     this.dataContainer.nativeElement.innerHTML = view.svgcontent.replace('<title>Layer 1</title>', '');
                 }
-                if (view.profile.bkcolor && (this.child || legacyProfile)) {
+                if (view.profile?.bkcolor && (this.child || legacyProfile)) {
                     this.dataContainer.nativeElement.style.backgroundColor = view.profile.bkcolor;
                 }
-                if (view.profile.align && !this.child) {
+                if (view.profile?.align && !this.child) {
                     FuxaViewComponent.setAlignStyle(view.profile.align, this.dataContainer.nativeElement);
                 }
             }
@@ -234,6 +253,8 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
                 });
                 this.viewRenderDelay = view.profile?.viewRenderDelay || 0;
             }
+        } catch (err) {
+            console.error('FUXA loadHmi error', err);
         } finally {
             // Garantisce sempre il completamento
             setTimeout(() => {
@@ -781,15 +802,43 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
         element.style.backgroundColor = this.view.profile.bkcolor;
     }
 
-    private getView(viewref: string): View {
+    private async getView(viewref: string): Promise<View> {
+        if (!viewref) {
+            return null;
+        }
         let view: View;
         const hmi = this.hmi ?? this.hmiService.hmi;
         for (let i = 0; i < hmi?.views?.length; i++) {
-            if (hmi.views[i]?.id === viewref) {
+            if (hmi.views[i]?.id === viewref || hmi.views[i]?.name === viewref) {
                 view = hmi.views[i];
                 break;
             }
         }
+        return this.resolveView(view);
+    }
+
+    private async resolveView(view: View): Promise<View> {
+        if (!view) {
+            return null;
+        }
+        try {
+            if (this.projectService.isViewLazy(view)) {
+                view = await this.projectService.ensureViewLoaded(view.id);
+            }
+        } catch (err) {
+            console.warn(`Unable to load view '${view.name || view.id}'.`, err);
+            return null;
+        }
+        return this.normalizeView(view);
+    }
+
+    private normalizeView(view: View): View {
+        if (!view) {
+            return null;
+        }
+        view.profile = view.profile ?? new DocProfile();
+        view.items = view.items ?? {};
+        view.variables = view.variables ?? {};
         return view;
     }
 
@@ -819,8 +868,8 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
         this.cards = [];
     }
 
-    loadPage(param: any, viewref: string, options: any) {
-        let view: View = this.getView(viewref);
+    async loadPage(param: any, viewref: string, options: any) {
+        let view: View = await this.getView(viewref);
         this.closeAllCards();
         if (view) {
             if (options?.variablesMapping) {
@@ -828,15 +877,19 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
             }
             this.sourceDeviceId = options.sourceDeviceId;
             this.loadHmi(view, true);
-            if (param.scaleMode) {
+            if (param?.scaleMode) {
                 Utils.resizeViewRev(this.dataContainer.nativeElement, this.dataContainer.nativeElement.parentElement?.parentElement, param.scaleMode);
             }
         }
     }
 
-    openDialog(event, viewref: string, options: any = {}) {
+    async openDialog(event, viewref: string, options: any = {}) {
+        const view = await this.getView(viewref);
+        if (!view) {
+            return;
+        }
         let dialogData = <FuxaViewDialogData>{
-            view: this.getView(viewref),
+            view: view,
             bkColor: 'transparent',
             variablesMapping: options.variablesMapping,
             disableDefaultClose: options.hideClose,
@@ -858,15 +911,21 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     private nextZIndex(): number {
-        return ++this.zIndexCounter;
+        const targetCards = this.parentcards ?? this.cards;
+        const maxCurrentZIndex = targetCards.reduce((max, currentCard) => {
+            const cardZIndex = Number(currentCard?.zIndex ?? 0);
+            return cardZIndex > max ? cardZIndex : max;
+        }, 0);
+        this.zIndexCounter = Math.max(this.zIndexCounter, maxCurrentZIndex) + 1;
+        return this.zIndexCounter;
     }
 
-    onOpenCard(id: string, event: PointerEvent | TouchEvent | any, viewref: string, options: any = {}) {
+    async onOpenCard(id: string, event: PointerEvent | TouchEvent | any, viewref: string, options: any = {}) {
         if (options?.singleCard) {
             this.cards = [];
             this.changeDetector.detectChanges();
         }
-        let view: View = this.getView(viewref);
+        let view: View = await this.getView(viewref);
         if (!view) {
             return;
         }
@@ -890,17 +949,17 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
                 card.y += eventPos.y ?? 0;
             }
         }
-        if (this.hmi.layout.hidenavigation) {
+        if (this.hmi?.layout?.hidenavigation) {
             card.y -= 48;
         }
-        card.width = view.profile.width;
-        card.height = view.profile.height;
+        card.width = view.profile?.width ?? 1024;
+        card.height = view.profile?.height ?? 768;
         card.view = view;
         card.variablesMapping = options?.variablesMapping;
         card.disableDefaultClose = options?.hideClose;
         card.sourceDeviceId = options?.sourceDeviceId;
         card.zIndex = this.nextZIndex();
-
+        console.log('index', card.zIndex);
         if (this.parentcards) {
             this.parentcards.push(card);
         } else {
@@ -998,6 +1057,9 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
     onRunScript(event: GaugeEvent) {
         if (event.actparam) {
             let torun = Utils.clone(this.projectService.getScripts().find(dataScript => dataScript.id == event.actparam));
+            if (!torun) {
+                return;
+            }
             torun.parameters = Utils.clone(<ScriptParam[]>event.actoptions[SCRIPT_PARAMS_MAP]);
             const placeholders = torun.parameters.filter(param => param.value?.startsWith(PlaceholderDevice.id)).map(param => param.value);
             if (placeholders?.length) {
@@ -1015,9 +1077,13 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
         }
     }
 
-    onMonitor(gaugeSettings: GaugeSettings, event: any, viewref: string, options: any = {}) {
+    async onMonitor(gaugeSettings: GaugeSettings, event: any, viewref: string, options: any = {}) {
+        const view = await this.getView(viewref);
+        if (!view) {
+            return;
+        }
         let dialogData = <WebcamPlayerDialogData>{
-            view: this.getView(viewref),
+            view: view,
             bkColor: 'transparent',
             gaugesManager: this.gaugesManager,
             ga: gaugeSettings

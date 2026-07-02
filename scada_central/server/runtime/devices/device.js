@@ -10,13 +10,15 @@ var BACNETclient = require('./bacnet');
 var HTTPclient = require('./httprequest');
 var MQTTclient = require('./mqtt');
 var EthernetIPclient = require('./ethernetip');
+var OmronEthernetIPclient = require('./omron-ethernetip');
 var FuxaServer = require('./fuxaserver');
 var ODBCclient = require('./odbc');
 var ADSclient = require('./adsclient');
 // var TEMPLATEclient = require('./template');
 var GpioClient = require('./gpio');
 var WebCamClient = require('./webcam');
-var MELSECClient = require('./melsec');
+var MELSECclient = require('./melsec');
+var REDISclient = require('./redis');
 
 const path = require('path');
 const utils = require('../utils');
@@ -83,6 +85,11 @@ function Device(data, runtime) {
             return null;
         }
         comm = EthernetIPclient.create(data, logger, events, manager, runtime);
+    } else if (data.type === DeviceEnum.OmronEthernetIP) {
+        if (!OmronEthernetIPclient) {
+            return null;
+        }
+        comm = OmronEthernetIPclient.create(data, logger, events, manager, runtime);
     } else if (data.type === DeviceEnum.FuxaServer) {
         if (!FuxaServer) {
             return null;
@@ -109,10 +116,15 @@ function Device(data, runtime) {
         }
         comm = WebCamClient.create(data, logger, events, manager, runtime);
     } else if (data.type === DeviceEnum.MELSEC) {
-        if (!MELSECClient) {
+        if (!MELSECclient) {
             return null;
         }
-        comm = MELSECClient.create(data, logger, events, manager, runtime);
+        comm = MELSECclient.create(data, logger, events, manager, runtime);
+    } else if (data.type === DeviceEnum.REDIS) {
+        if (!REDISclient) {
+            return null;
+        }
+        comm = REDISclient.create(data, logger, events, manager, runtime);
     }
     // else if (data.type === DeviceEnum.Template) {
     //     if (!TEMPLATEclient) {
@@ -302,6 +314,12 @@ function Device(data, runtime) {
                 }).catch(function (err) {
                     reject(err);
                 });
+            } else if (data.type === DeviceEnum.REDIS) {
+                comm.browse(path, callback).then(function (result) {
+                    resolve(result);
+                }).catch(function (err) {
+                    reject(err);
+                });
             } else {
                 reject('Browse not supported!');
             }
@@ -466,7 +484,7 @@ function getSupportedProperty(endpoint, type, packagerManager) {
     var self = this;
     return new Promise(function (resolve, reject) {
         if (type === DeviceEnum.OPCUA) {
-            OpcUAclient.getEndPoints(endpoint).then(function (result) {
+            OpcUAclient.getEndPoints(endpoint, packagerManager).then(function (result) {
                 resolve(result);
             }).catch(function (err) {
                 reject(err);
@@ -520,6 +538,8 @@ function loadPlugin(type, module) {
         MQTTclient = require(module);
     } else if (type === DeviceEnum.EthernetIP) {
         EthernetIPclient = require(module);
+    } else if (type === DeviceEnum.OmronEthernetIP) {
+        OmronEthernetIPclient = require(module);
     } else if (type === DeviceEnum.FuxaServer) {
         FuxaServer = require(module);
     } else if (type === DeviceEnum.ODBC) {
@@ -529,7 +549,9 @@ function loadPlugin(type, module) {
     } else if (type === DeviceEnum.GPIO) {
         GpioClient = require(module);
     } else if (type === DeviceEnum.MELSEC) {
-        MELSECClient = require(module);
+        MELSECclient = require(module);
+    } else if (type === DeviceEnum.REDIS) {
+        REDISclient = require(module);
     }
 }
 
@@ -564,6 +586,7 @@ var DeviceEnum = {
     WebAPI: 'WebAPI',
     MQTTclient: 'MQTTclient',
     EthernetIP: 'EthernetIP',
+    OmronEthernetIP: 'OmronEthernetIP',
     FuxaServer: 'FuxaServer',
     ODBC: 'ODBC',
     ADSclient: 'ADSclient',
@@ -571,6 +594,7 @@ var DeviceEnum = {
     internal: 'internal',
     WebCam: 'WebCam',
     MELSEC: 'MELSEC',
+    REDIS: 'REDIS',
     // Template: 'template'
 }
 

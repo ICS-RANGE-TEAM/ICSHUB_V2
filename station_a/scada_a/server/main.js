@@ -7,6 +7,7 @@ const https = require('https');
 const socketIO = require('socket.io');
 const nopt = require("nopt");
 const schedule = require('node-schedule');
+const jwt = require('jsonwebtoken');
 
 const paths = require('./paths');
 const logger = require('./runtime/logger');
@@ -18,8 +19,6 @@ const authJwt = require('./api/jwt-helper');
 
 const express = require('express');
 const app = express();
-const swaggerUi = require('swagger-ui-express');
-const YAML = require('yamljs');
 
 var server;
 var settingsFile;
@@ -134,6 +133,16 @@ try {
         if (mysettings.language) {
             settings.language = mysettings.language;
         }
+        if (!utils.isNullOrUndefined(mysettings.hideEditorOnboarding)) {
+            settings.hideEditorOnboarding = mysettings.hideEditorOnboarding;
+        }
+        if (mysettings.editorSectionMessages) {
+            settings.editorSectionMessages = Object.assign(
+                {},
+                settings.editorSectionMessages || {},
+                mysettings.editorSectionMessages
+            );
+        }
         if (mysettings.uiPort) {
             settings.uiPort = mysettings.uiPort;
         }
@@ -148,6 +157,15 @@ try {
         }
         if (mysettings.tokenExpiresIn) {
             settings.tokenExpiresIn = mysettings.tokenExpiresIn;
+        }
+        if (!utils.isNullOrUndefined(mysettings.enableRefreshCookieAuth)) {
+            settings.enableRefreshCookieAuth = mysettings.enableRefreshCookieAuth;
+        }
+        if (mysettings.refreshTokenExpiresIn) {
+            settings.refreshTokenExpiresIn = mysettings.refreshTokenExpiresIn;
+        }
+        if (mysettings.secretCode) {
+            settings.secretCode = mysettings.secretCode;
         }
         if (mysettings.smtp) {
             settings.smtp = mysettings.smtp;
@@ -164,15 +182,36 @@ try {
         if (!utils.isNullOrUndefined(mysettings.broadcastAll)) {
             settings.broadcastAll = mysettings.broadcastAll;
         }
+        if (!utils.isNullOrUndefined(mysettings.lazyViewLoading)) {
+            settings.lazyViewLoading = mysettings.lazyViewLoading;
+        }
         if (!utils.isNullOrUndefined(mysettings.logFull)) {
             settings.logFull = mysettings.logFull;
         }
         if (!utils.isNullOrUndefined(mysettings.userRole)) {
             settings.userRole = mysettings.userRole;
         }
+        if (!utils.isNullOrUndefined(mysettings.nodeRedEnabled)) {
+            settings.nodeRedEnabled = mysettings.nodeRedEnabled;
+        }
+        if (!utils.isNullOrUndefined(mysettings.nodeRedAuthMode)) {
+            settings.nodeRedAuthMode = mysettings.nodeRedAuthMode;
+        }
+        if (!utils.isNullOrUndefined(mysettings.swaggerEnabled)) {
+            settings.swaggerEnabled = mysettings.swaggerEnabled;
+        }
+        if (mysettings.nodeRedEnabled === true && utils.isNullOrUndefined(mysettings.nodeRedAuthMode)) {
+            settings.nodeRedAuthMode = 'legacy-open';
+        }
     }
 } catch (err) {
     logger.error('Error loading user settings file: ' + userSettingsFile)
+}
+
+// Ensure secure mode never runs with an empty/static-known JWT secret.
+if (settings.secureEnabled && !settings.secretCode) {
+    settings.secretCode = utils.generateSecretCode();
+    logger.warn('Generated a random JWT secret in memory because secureEnabled=true and secretCode was missing. Persist it in settings for stable sessions across restarts.');
 }
 
 // Check logger
@@ -243,6 +282,10 @@ const io = socketIO(server, {
 
 // Check settings value
 var www = path.resolve(__dirname, '../client/dist');
+if (!fs.existsSync(www)) {      // compatibility with docker/npm/electron
+    www = path.resolve(__dirname, './dist');
+}
+
 settings.httpStatic = settings.httpStatic || www;
 
 if (parsedArgs.port !== undefined) {
@@ -304,10 +347,13 @@ const allowCrossDomain = function (req, res, next) {
 
     if (isOriginAllowed(origin)) {
         res.header('Access-Control-Allow-Origin', origin || '*');
+        if (settings.enableRefreshCookieAuth) {
+            res.header('Access-Control-Allow-Credentials', 'true');
+        }
     }
 
     res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'x-access-token, x-auth-user, Origin, Content-Type, Accept');
+    res.header('Access-Control-Allow-Headers', 'x-access-token, x-auth-user, Origin, Content-Type, Accept, Skip-Auth, Skip-Error');
 
 
     if (req.method === 'OPTIONS') {
@@ -315,6 +361,44 @@ const allowCrossDomain = function (req, res, next) {
     }
     next();
 };
+
+function getCookieValue(req, name) {
+    const cookieHeader = req.headers.cookie;
+    if (!cookieHeader) {
+        return null;
+    }
+    const cookies = cookieHeader.split(';');
+    for (const cookie of cookies) {
+        const [key, ...rest] = cookie.trim().split('=');
+        if (key === name) {
+            return decodeURIComponent(rest.join('='));
+        }
+    }
+    return null;
+}
+
+function snapshotAuth(req, res, next) {
+    if (!settings.secureEnabled) {
+        return next();
+    }
+
+    const token = req.query?.token || req.headers['x-access-token'] || getCookieValue(req, 'fuxa_access');
+    if (!token || token === 'null') {
+        return res.status(401).end();
+    }
+
+    try {
+        const decoded = jwt.verify(token, authJwt.secretCode);
+        if (!decoded?.id || authJwt.isGuestUser(decoded.id, decoded.groups)) {
+            return res.status(401).end();
+        }
+        res.header('Cache-Control', 'no-store');
+        return next();
+    } catch {
+        return res.status(401).end();
+    }
+}
+
 app.use(allowCrossDomain);
 app.use('/', express.static(settings.httpStatic));
 app.use('/home', express.static(settings.httpStatic));
@@ -322,39 +406,60 @@ app.use('/home/:viewName', express.static(settings.httpStatic));
 app.use('/lab', express.static(settings.httpStatic));
 app.use('/editor', express.static(settings.httpStatic));
 app.use('/device', express.static(settings.httpStatic));
+app.use('/plugins', express.static(settings.httpStatic));
 app.use('/rodevice', express.static(settings.httpStatic));
 app.use('/users', express.static(settings.httpStatic));
 app.use('/view', express.static(settings.httpStatic));
 app.use('/' + settings.httpUploadFileStatic, express.static(settings.uploadFileDir));
 app.use('/_images', express.static(settings.imagesFileDir));
 app.use('/_widgets', express.static(settings.widgetsFileDir));
-app.use('/snapshots', express.static(settings.webcamSnapShotsDir))
+app.use('/snapshots', snapshotAuth, express.static(settings.webcamSnapShotsDir));
+app.use('/ar', express.static(settings.httpStatic));
 
 var accessLogStream = fs.createWriteStream(settings.logDir + '/api.log', { flags: 'a' });
-app.use(morgan('combined', {
-    stream: accessLogStream,
-    skip: function (req, res) { return res.statusCode < 400 }
-}));
+if (runtime.settings.logApiLevel !== 'none') {
+	app.use(morgan('combined', {
+		stream: accessLogStream,
+		skip: function (req, res) { return res.statusCode < 400 }
+	}));
 
-app.use(morgan('dev', {
-    skip: function (req, res) {
-        return res.statusCode < 400
-    }, stream: process.stderr
-}));
+	app.use(morgan('dev', {
+		skip: function (req, res) {
+			return res.statusCode < 400
+		}, stream: process.stderr
+	}));
 
-app.use(morgan('dev', {
-    skip: function (req, res) {
-        return res.statusCode >= 400
-    }, stream: process.stdout
-}));
+	app.use(morgan('dev', {
+		skip: function (req, res) {
+			return res.statusCode >= 400
+		}, stream: process.stdout
+	}));
+}
+
+function mountSwaggerIfEnabled() {
+    const swaggerEnabled = settings.swagger || settings.swaggerEnabled;
+    if (!swaggerEnabled) return;
+
+    let swaggerUi;
+    let YAML;
+    try {
+        swaggerUi = require('swagger-ui-express');
+        YAML = require('yamljs');
+    } catch (err) {
+        if (err && err.code !== 'MODULE_NOT_FOUND') {
+            throw err;
+        }
+        logger.warn('[Swagger] Enabled but optional dependencies are missing; skipping /api-docs. Install swagger-ui-express and yamljs to enable it.');
+        return;
+    }
+
+    const swaggerDocument = YAML.load(path.join(__dirname, 'docs', 'openapi.yaml'));
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+}
 
 // Swagger API Docs (mounted on main app so it isn't intercepted by optional integrations)
 try {
-    const swaggerEnabled = settings.swagger || settings.swaggerEnabled;
-    if (swaggerEnabled) {
-        const swaggerDocument = YAML.load(path.join(__dirname, 'docs', 'openapi.yaml'));
-        app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-    }
+    mountSwaggerIfEnabled();
 } catch (err) {
     logger.warn('Swagger UI failed to initialize', err);
 }
@@ -389,7 +494,10 @@ function getListenPath() {
     return listenPath;
 }
 
-const { mountNodeRedIfInstalled } = require('./integrations/node-red');
+let mountNodeRedIfInstalled;
+if (settings.nodeRedEnabled) {
+    ({ mountNodeRedIfInstalled } = require('./integrations/node-red'));
+}
 
 // Start FUXA
 function startFuxa() {
@@ -410,10 +518,14 @@ function startFuxa() {
             });
 
             // Mount Node-RED if present; never block FUXA if it fails
-            try {
-                await mountNodeRedIfInstalled({ app, server, settings, runtime, logger, authJwt, events });
-            } catch (e) {
-                logger.warn('[Node-RED] Failed to initialize, continuing without it.', e);
+            if (settings.nodeRedEnabled && typeof mountNodeRedIfInstalled === 'function') {
+                try {
+                    await mountNodeRedIfInstalled({ app, server, settings, runtime, logger, authJwt, events });
+                } catch (e) {
+                    logger.warn('[Node-RED] Failed to initialize, continuing without it.', e);
+                }
+            } else if (settings.nodeRedEnabled) {
+                logger.warn('[Node-RED] Enabled but integration not available; continuing without it.');
             }
 
             if (settings.disableServer !== false) {

@@ -18,17 +18,17 @@
     "header.edit-users": "유저 설정",
     "header.edit-alarms": "알림 설정",
     "header.edit-texts": "텍스트 설정",
-    "header.help": "FUXA 도움말",
+    "header.help": "Talixman SCADA 도움말",
     "header.help-tutorial": "튜토리얼",
     "header.help-info": "정보",
     "header.info-version": "버전 ",
     "header.theme": "밝은 테마/어두운 테마",
 
-    "sidenav.title": "FUXA",
+    "sidenav.title": "Talixman SCADA",
 
-    "tutorial.title": "FUXA 튜토리얼",
+    "tutorial.title": "Talixman SCADA 튜토리얼",
 
-    "dlg.info-title": "FUXA",
+    "dlg.info-title": "Talixman SCADA",
 
     "dlg.layout-title": "레이아웃 설정",
     "dlg.layout-general": "일반 설정",
@@ -340,6 +340,8 @@
     "editor.tools-launch-title": "현재 뷰 실행",
     "editor.tools-zoom-title": "확대 도구 [Ctrl+Up/Down]",
     "editor.tools-grid-title": "격자 보이기/숨기기",
+    "editor.tools-movestep-title": "이동 간격",
+    "editor.tools-movestep-custom": "사용자 지정",
     "editor.tools-undo-title": "실행취소 [Z]",
     "editor.tools-redo-title": "되돌리기 [Y]",
     "editor.tools-clone-title": "개체 복사 [D]",
@@ -459,7 +461,7 @@
     "devices.export": "장치 내보내기",
     "devices.import": "장치 가져오기",
     "device.property-client": "장치 속성",
-    "device.property-server": "FUXA 서버 속성",
+    "device.property-server": "Talixman SCADA 서버 속성",
     "device.property-name": "이름",
     "device.property-type": "타입",
     "device.property-polling": "폴링",
@@ -544,6 +546,9 @@
     "device-tag-dialog-title": "태그 선택",
 
     "device.tag-options-title": "태그 옵션",
+
+
+    "device.tag-uns-path": "UNS Path",
     "device.tag-daq-enabled": "등록 활성화",
     "device.tag-daq-changed": "값 변경 가능시 저장",
     "device.tag-daq-interval": "값 차이 저장 (sec.)",
@@ -636,6 +641,12 @@
     "alarms.list-low": "낮음",
     "alarms.list-info": "메세지",
     "alarms.list-actions": "행동",
+    "alarms.import": "Import Alarms",
+    "alarms.export": "Export Alarms (JSON)",
+    "alarms.import-title": "Import Alarms",
+    "alarms.import-conflicts-message": "{{total}} alarms found. {{conflicts}} already exist. Choose how to import them.",
+    "alarms.import-copy": "Add as copies",
+    "alarms.import-replace": "Replace",
     "alarm.property-title": "알림",
     "alarm.property-name": "이름",
     "alarm.property-permission": "권한",
@@ -734,6 +745,12 @@
     "dlg.app-settings-server-port": "서버가 포팅 수신 대기중",
     "dlg.app-settings-alarms-clear": "모든 알림과 기록 삭제",
     "dlg.app-settings-auth-token": "토큰 권한",
+    "dlg.app-settings-daqstore-url": "URL",
+    "dlg.app-settings-daqstore-configurl": "Config URL",
+    "dlg.app-settings-daqstore-queryconn": "Query connection (PGWire)",
+
+    "dlg.app-settings-daqstore-questdb-host": "QuestDB Host",
+    "dlg.app-settings-daqstore-ingestconn": "Ingestion connection (ILP)",
     "dlg.app-auth-disabled": "비활성화",
     "dlg.app-auth-expiration-15m": "15분 후 토큰 만료로 활성화.",
     "dlg.app-auth-expiration-1h": "1시간 후 토큰 만료로 활성화.",
@@ -762,6 +779,8 @@
     "msg.user-remove": "유저를 제거하시겠습니까? ",
     "msg.project-save-success": "프로젝트가 성공적으로 저장되었습니다!",
     "msg.project-save-error": "프로젝트 저장 실패!",
+    "msg.import-alarms-error": "Import alarms failed!",
+    "msg.export-alarms-error": "Export alarms failed!",
     "msg.project-format-error": "형식에 맞지 않은 프로젝트입니다!",
     "msg.project-save-unauthorized": "프로젝트 저장 실패! 승인되지 않았습니다!",
     "msg.project-save-ask": "프로젝트를 떠나시겠습니까?",
@@ -772,3 +791,6 @@
     "msg.editor-mode-locked": "편집자가 이미 열려있습니다!",
     "msg.alarms-clear-success": "모든 알림이 취소되었습니다!"
 }
+
+
+

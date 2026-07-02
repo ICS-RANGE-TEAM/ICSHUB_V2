@@ -1,7 +1,7 @@
 ﻿/* eslint-disable @angular-eslint/component-class-suffix */
 import { Component, Inject, OnInit, OnDestroy, AfterViewInit, ViewChild, ViewContainerRef, ComponentFactoryResolver, ElementRef } from '@angular/core';
 import { ChangeDetectorRef } from '@angular/core';
-import { MatLegacyDialog as MatDialog, MatLegacyDialogRef as MatDialogRef, MAT_LEGACY_DIALOG_DATA as MAT_DIALOG_DATA} from '@angular/material/legacy-dialog';
+import { MatDialog as MatDialog, MatDialogRef as MatDialogRef, MAT_DIALOG_DATA as MAT_DIALOG_DATA} from '@angular/material/dialog';
 import { MatDrawer } from '@angular/material/sidenav';
 import { Subject, Subscription, switchMap, takeUntil } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
@@ -41,6 +41,8 @@ import { MapsViewComponent } from '../maps/maps-view/maps-view.component';
 import { KioskWidgetsComponent } from '../resources/kiosk-widgets/kiosk-widgets.component';
 import { ResourcesService } from '../_services/resources.service';
 import { InputPropertyComponent } from '../gauges/controls/html-input/input-property/input-property.component';
+import { SettingsService } from '../_services/settings.service';
+import { OnboardingWizardComponent } from './onboarding-wizard/onboarding-wizard.component';
 
 declare var Gauge: any;
 
@@ -89,6 +91,8 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
     imagefile: string;
     ctrlInitParams: any;
     gridOn = false;
+    moveStep = 1;
+    readonly moveStepOptions = [1, 2, 3, 5, 10];
     isAnySelected = false;
     selectedElement: SelElement = new SelElement();
     panelsState: PanelsStateType = {
@@ -121,6 +125,8 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
     private subscriptionSave: Subscription;
     private subscriptionLoad: Subscription;
     private destroy$ = new Subject<void>();
+    private onboardingWizardHandled = false;
+    private onboardingWizardOpened = false;
 
     constructor(private projectService: ProjectService,
         private winRef: WindowRef,
@@ -131,7 +137,8 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
         private viewContainerRef: ViewContainerRef,
         private resolver: ComponentFactoryResolver,
         private resourcesService: ResourcesService,
-        private libWidgetsService: LibWidgetsService) {
+        private libWidgetsService: LibWidgetsService,
+        private settingsService: SettingsService) {
     }
 
     //#region Implemented onInit / onAfterInit event
@@ -174,9 +181,18 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
     ngAfterViewInit() {
         this.myInit();
         this.setMode('select');
+        this.settingsService.loaded$.pipe(takeUntil(this.destroy$)).subscribe(loaded => {
+            if (loaded) {
+                this.openOnboardingWizardIfNeeded();
+            }
+        });
         let hmi = this.projectService.getHmi();
         if (hmi) {
-            this.loadHmi(true);
+            if (this.projectService.hasLazyViews()) {
+                this.projectService.reload(true);
+            } else {
+                this.loadHmi(true);
+            }
         }
         this.subscriptionLoad = this.projectService.onLoadHmi.subscribe(load => {
             this.loadHmi();
@@ -268,6 +284,7 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
             );
 
             this.winRef.nativeWindow.svgEditor.init();
+            this.winRef.nativeWindow.svgEditor.setMoveStep(this.moveStep);
             $(initContextmenu);
 
         } catch (err) {
@@ -416,15 +433,15 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
      * @param ele gauge element
      */
     private searchGaugeSettings(ele): GaugeSettings {
-        if (ele) {
-            if (this.currentView) {
-                if (this.currentView.items[ele.id]) {
-                    return this.currentView.items[ele.id];
-                }
+        if (ele?.id) {
+            const currentGaugeSettings = this.currentView?.items?.[ele.id];
+            if (currentGaugeSettings) {
+                return currentGaugeSettings;
             }
-            for (var i = 0; i < this.hmi.views.length; i++) {
-                if (this.hmi.views[i].items[ele.id]) {
-                    return this.hmi.views[i].items[ele.id];
+            for (const view of this.hmi?.views ?? []) {
+                const gaugeSettings = view?.items?.[ele.id];
+                if (gaugeSettings) {
+                    return gaugeSettings;
                 }
             }
             return this.gaugesManager.createSettings(ele.id, ele.type);
@@ -526,6 +543,7 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
                 // check gauge to init
                 this.gaugesRef = {};
+                if (v) { this.projectService.cleanView(v); }
                 setTimeout(() => {
                     for (let key in v.items) {
                         let ga: GaugeSettings = this.getGaugeSettings(v.items[key]);
@@ -832,6 +850,22 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
         this.winRef.nativeWindow.svgEditor.enableGridSnapping(this.gridOn);
     }
 
+    onMoveStepChange(step: number | string) {
+        const parsedStep = Number(step);
+        if (!Number.isInteger(parsedStep) || parsedStep < 1) {
+            return;
+        }
+        this.moveStep = parsedStep;
+        this.winRef.nativeWindow.svgEditor.setMoveStep(parsedStep);
+    }
+
+    onCustomMoveStepEnter(event: KeyboardEvent, step: string, menuTrigger: any) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.onMoveStepChange(step);
+        setTimeout(() => menuTrigger.closeMenu());
+    }
+
     /**
      * add image to view
      * @param event selected file
@@ -982,6 +1016,9 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
      */
     onStartCurrent() {
         this.onSaveProject();
+        if (this.projectService.cleanView(this.currentView)) {
+            this.onSaveProject();
+        }
         this.winRef.nativeWindow.open('lab', 'MyTest', 'width=800,height=640,menubar=0');
     }
     //#endregion
@@ -1636,6 +1673,27 @@ export class EditorComponent implements OnInit, AfterViewInit, OnDestroy {
         this.gaugeSettingsHide = gaugeSettings?.hide ?? false;
         this.gaugeSettingsLock = gaugeSettings?.lock ?? false;
         this.winRef.nativeWindow.svgEditor.lockSelection(gaugeSettings?.lock);
+    }
+
+    private openOnboardingWizardIfNeeded() {
+        if (this.onboardingWizardHandled || this.onboardingWizardOpened ||
+            this.settingsService.getSettings()?.hideEditorOnboarding ||
+            this.settingsService.getSettings()?.secureEnabled) {
+            this.onboardingWizardHandled = true;
+            return;
+        }
+
+        this.onboardingWizardOpened = true;
+        const dialogRef = this.dialog.open(OnboardingWizardComponent, {
+            autoFocus: false,
+            width: '560px',
+            panelClass: 'light-dialog-container'
+        });
+
+        dialogRef.afterClosed().subscribe(() => {
+            this.onboardingWizardOpened = false;
+            this.onboardingWizardHandled = true;
+        });
     }
 
     flipSelected(fliptype: string) {

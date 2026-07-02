@@ -1,11 +1,12 @@
 import { Component, OnInit, Input, Output, EventEmitter } from '@angular/core';
-import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
+import { MatDialog as MatDialog } from '@angular/material/dialog';
 import { PermissionData, PermissionDialogComponent } from '../../../gauge-property/permission-dialog/permission-dialog.component';
 import { GaugeEventActionType, GaugeSchedulerProperty, SchedulerDevice, SchedulerDeviceAction, View } from '../../../../_models/hmi';
 import { Script } from '../../../../_models/script';
 import { ProjectService } from '../../../../_services/project.service';
 import { TranslateService } from '@ngx-translate/core';
 import { FlexAuthValues } from '../../../gauge-property/flex-auth/flex-auth.component';
+import { Utils } from '../../../../_helpers/utils';
 
 @Component({
     selector: 'app-scheduler-property',
@@ -27,6 +28,7 @@ export class SchedulerPropertyComponent implements OnInit {
     actionType = GaugeEventActionType;
     actionTypeKeys: any = {};
     property: GaugeSchedulerProperty;
+    defaultColor = Utils.defaultColor;
 
     constructor(
         private dialog?: MatDialog,
