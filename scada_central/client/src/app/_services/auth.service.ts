@@ -14,16 +14,48 @@ export class AuthService {
 	private currentUser: UserProfile;
 	private endPointConfig: string = EndPointApi.getURL();
 	currentUser$ = new BehaviorSubject<UserProfile>(null);
+	private useRefreshCookieAuth = false;
 
 	constructor(
 		private http: HttpClient,
 		private settings: SettingsService
 	) {
-		let user = JSON.parse(localStorage.getItem('currentUser'));
+		this.useRefreshCookieAuth = !!this.settings.getSettings()?.enableRefreshCookieAuth;
+		let user = JSON.parse(sessionStorage.getItem('currentUser'));
 		if (user) {
-		  this.currentUser = user;
+			this.currentUser = user;
+			if (!this.useRefreshCookieAuth && this.isTokenExpired(this.currentUser?.token)) {
+				// Token expired: drop stale token to avoid socket auth failures on refresh.
+				if (this.isGuestUser(this.currentUser)) {
+					this.currentUser.token = null;
+					this.saveUserToken(this.currentUser);
+				} else {
+					this.currentUser = null;
+					sessionStorage.removeItem('currentUser');
+				}
+			}
 		}
+		this.publishAccessToken(this.currentUser?.token);
 		this.currentUser$.next(this.currentUser);
+
+		if (this.useRefreshCookieAuth) {
+			this.refreshAccessToken();
+		}
+
+		this.settings.settings$.subscribe((appSettings) => {
+			const enabled = !!appSettings?.enableRefreshCookieAuth;
+			const wasEnabled = this.useRefreshCookieAuth;
+			this.useRefreshCookieAuth = enabled;
+			if (enabled && !wasEnabled) {
+				// Move to refresh-cookie flow: drop stored token and refresh.
+				if (this.currentUser) {
+					this.currentUser.token = null;
+					this.saveUserToken(this.currentUser);
+					this.currentUser$.next(this.currentUser);
+				}
+				this.refreshAccessToken();
+			}
+		});
 	}
 
 	signIn(username: string, password: string) {
@@ -37,6 +69,7 @@ export class AuthService {
 							this.currentUser.infoRoles = JSON.parse(this.currentUser.info)?.roles;
 						}
 						this.saveUserToken(this.currentUser);
+						this.publishAccessToken(this.currentUser.token);
 						this.currentUser$.next(this.currentUser);
 					}
 					observer.next(null);
@@ -52,9 +85,15 @@ export class AuthService {
 	}
 
 	signOut() {
-		if (this.removeUser()) {
-			window.location.reload();
+		if (this.useRefreshCookieAuth && environment.serverEnabled) {
+			let header = new HttpHeaders({ 'Skip-Auth': 'true', 'Skip-Error': 'true' });
+			this.http.post(this.endPointConfig + '/api/signout', {}, { headers: header, withCredentials: true }).subscribe({
+				next: () => this.finalizeSignOut(),
+				error: () => this.finalizeSignOut()
+			});
+			return;
 		}
+		this.finalizeSignOut();
 	}
 
 	getUser(): User {
@@ -69,6 +108,10 @@ export class AuthService {
 		return this.currentUser?.token;
 	}
 
+	private publishAccessToken(token: string = null) {
+		(window as any).fuxaAccessToken = token || null;
+	}
+
     isAdmin(): boolean {
         if (this.currentUser && UserGroups.ADMINMASK.indexOf(this.currentUser.groups) !== -1) {
             return true;
@@ -76,22 +119,135 @@ export class AuthService {
         return false;
     }
 
-	setNewToken(token: string) {
+	setNewToken(token: string, userData?: Partial<UserProfile>) {
+		if (!this.currentUser) {
+			return;
+		}
+		if (userData) {
+			this.currentUser.username = userData.username ?? this.currentUser.username;
+			this.currentUser.fullname = userData.fullname ?? this.currentUser.fullname;
+			this.currentUser.groups = userData.groups ?? this.currentUser.groups;
+			this.currentUser.info = userData.info ?? this.currentUser.info;
+			if (this.currentUser.info) {
+				this.currentUser.infoRoles = JSON.parse(this.currentUser.info)?.roles;
+			} else {
+				this.currentUser.infoRoles = null;
+			}
+		}
 		this.currentUser.token = token;
 		this.saveUserToken(this.currentUser);
+		this.publishAccessToken(token);
+		this.currentUser$.next(this.currentUser);
 	}
 
 	// to check by page refresh
 	private saveUserToken(user: UserProfile) {
-		localStorage.setItem('currentUser', JSON.stringify(user));
+		if (this.useRefreshCookieAuth) {
+			const toStore = user ? {
+				username: user.username,
+				fullname: user.fullname,
+				groups: user.groups,
+				info: user.info,
+				infoRoles: user.infoRoles
+			} : null;
+			if (toStore) {
+				sessionStorage.setItem('currentUser', JSON.stringify(toStore));
+			} else {
+				sessionStorage.removeItem('currentUser');
+			}
+		} else {
+			sessionStorage.setItem('currentUser', JSON.stringify(user));
+		}
 	}
 
 	private removeUser(): boolean {
 		const result = !!this.currentUser;
 		this.currentUser = null;
-		localStorage.removeItem('currentUser');
+		sessionStorage.removeItem('currentUser');
+		this.publishAccessToken(null);
 		this.currentUser$.next(this.currentUser);
 		return result;
+	}
+
+	private isGuestUser(user: UserProfile): boolean {
+		if (!user) {
+			return false;
+		}
+		if (user.username === 'guest') {
+			return true;
+		}
+		if (Array.isArray(user.groups) && user.groups.includes('guest')) {
+			return true;
+		}
+		return false;
+	}
+
+	private finalizeSignOut() {
+		if (this.removeUser()) {
+			window.location.reload();
+		}
+	}
+
+	private refreshAccessToken() {
+		if (!environment.serverEnabled || !this.useRefreshCookieAuth) {
+			return;
+		}
+		let header = new HttpHeaders({ 'Skip-Auth': 'true', 'Skip-Error': 'true' });
+		this.http.post(this.endPointConfig + '/api/refresh', {}, { headers: header, withCredentials: true }).subscribe({
+			next: (result: any) => {
+				if (result?.data?.token) {
+					const refreshed: UserProfile = {
+						...(this.currentUser || {}),
+						username: result.data.username || this.currentUser?.username,
+						fullname: result.data.fullname || this.currentUser?.fullname,
+						groups: result.data.groups ?? this.currentUser?.groups,
+						info: result.data.info ?? this.currentUser?.info,
+						token: result.data.token
+					};
+					if (refreshed.info) {
+						refreshed.infoRoles = JSON.parse(refreshed.info)?.roles;
+					}
+					this.currentUser = refreshed;
+					this.saveUserToken(this.currentUser);
+					this.publishAccessToken(this.currentUser.token);
+					this.currentUser$.next(this.currentUser);
+				}
+			},
+			error: () => {
+				if (!this.isGuestUser(this.currentUser)) {
+					this.removeUser();
+				}
+			}
+		});
+	}
+
+	private isTokenExpired(token: string): boolean {
+		if (!token) {
+			return true;
+		}
+		try {
+			const payload = this.decodeJwtPayload(token);
+			const exp = payload?.exp;
+			if (!exp) {
+				return false;
+			}
+			const nowSeconds = Math.floor(Date.now() / 1000);
+			return nowSeconds >= exp;
+		} catch (err) {
+			return true;
+		}
+	}
+
+	private decodeJwtPayload(token: string): any {
+		const parts = token.split('.');
+		if (parts.length < 2) {
+			throw new Error('Invalid token');
+		}
+		const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+		const json = decodeURIComponent(atob(base64).split('').map((c) =>
+			'%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+		).join(''));
+		return JSON.parse(json);
 	}
 
 	/**

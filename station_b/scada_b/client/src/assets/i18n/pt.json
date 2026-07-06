@@ -18,16 +18,16 @@
     "header.edit-users": "Configurações dos utilizadores",
     "header.edit-alarms": "Configurações dos Alarmes",
     "header.edit-texts": "Configurações dos Textos",
-    "header.help": "FUXA Ajuda",
+    "header.help": "Talixman SCADA Ajuda",
     "header.help-tutorial": "Tutorial",
     "header.help-info": "Sobre",
     "header.info-version": "Versão ",
 
-    "sidenav.title": "FUXA",
+    "sidenav.title": "Talixman SCADA",
 
-    "tutorial.title": "FUXA Tutorial",
+    "tutorial.title": "Talixman SCADA Tutorial",
 
-    "dlg.info-title": "FUXA",
+    "dlg.info-title": "Talixman SCADA",
 
     "dlg.layout-title": "Configurações Layout",
     "dlg.layout-general": "Geral",
@@ -314,6 +314,8 @@
     "editor.tools-launch-title": "Iniciar a Atual Visualização",
     "editor.tools-zoom-title": "Ferramenta Zoom [Ctrl+Up/Down]",
     "editor.tools-grid-title": "Mostrar Ocultar Rede",
+    "editor.tools-movestep-title": "Passo de movimento",
+    "editor.tools-movestep-custom": "Personalizado",
     "editor.tools-undo-title": "Desfazer [Z]",
     "editor.tools-redo-title": "Refazer [Y]",
     "editor.tools-clone-title": "Duplicar Elemento [D]",
@@ -418,7 +420,7 @@
     "device.list-value": "Valor",
 
     "device.property-client": "Propriedade do Aparelho",
-    "device.property-server": "Propriedade servidor FUXA",
+    "device.property-server": "Propriedade servidor Talixman SCADA",
     "device.property-name": "Nome",
     "device.property-type": "Tipo",
     "device.property-polling": "Polling",
@@ -551,6 +553,12 @@
     "alarms.list-high": "Alto",
     "alarms.list-low": "Baixo",
     "alarms.list-info": "Mensagem",
+    "alarms.import": "Import Alarms",
+    "alarms.export": "Export Alarms (JSON)",
+    "alarms.import-title": "Import Alarms",
+    "alarms.import-conflicts-message": "{{total}} alarms found. {{conflicts}} already exist. Choose how to import them.",
+    "alarms.import-copy": "Add as copies",
+    "alarms.import-replace": "Replace",
     "alarm.property-title": "Alarme",
     "alarm.property-name": "Nome",
     "alarm.property-permission": "Autorização",
@@ -625,6 +633,12 @@
     "dlg.app-language-zh-cn": "Chinês",
     "dlg.app-settings-server-port": "Servidor está à escuta no porto",
     "dlg.app-settings-auth-token": "Autentificar com Token",
+    "dlg.app-settings-daqstore-url": "URL",
+    "dlg.app-settings-daqstore-configurl": "Config URL",
+    "dlg.app-settings-daqstore-queryconn": "Query connection (PGWire)",
+
+    "dlg.app-settings-daqstore-questdb-host": "QuestDB Host",
+    "dlg.app-settings-daqstore-ingestconn": "Ingestion connection (ILP)",
     "dlg.app-auth-disabled": "Desativado",
     "dlg.app-auth-expiration-15m": "Ativar token com expiração em 15 minutos.",
     "dlg.app-auth-expiration-1h": "Ativar token com expiração em 1 horas.",
@@ -635,6 +649,8 @@
     "msg.alarm-remove": "Quer remover o Alarme ",
     "msg.text-remove": "Quer remover o Texto? ",
     "msg.alarmproperty-error-exist": "nome do Alarm já existe!",
+    "msg.import-alarms-error": "Import alarms failed!",
+    "msg.export-alarms-error": "Export alarms failed!",
     "msg.alarmproperty-missing-value": "Alguns valores estão a faltar!",
     "msg.textproperty-error-exist": "Text-ID já existe!",
     "msg.textproperty-missing-value": "Alguns valores estão a faltar!",
@@ -656,5 +672,6 @@
     "msg.project-save-ask": "De certeza que quer sair do Projeto?",
     "msg.login-username-required": "Entra o Utilizador",
     "msg.login-password-required": "Entra uma palavra-passe",
-    "msg.signin-failed": "Não autorizado"
+    "msg.signin-failed": "Não autorizado",
+    "device.tag-uns-path": "UNS Path"
 }

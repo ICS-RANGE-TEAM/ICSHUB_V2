@@ -3,7 +3,18 @@ import * as L from 'leaflet';
 import { GaugesManager } from '../../gauges/gauges.component';
 import { FuxaViewComponent } from '../../fuxa-view/fuxa-view.component';
 import { ProjectService } from '../../_services/project.service';
+import { MatMenuTrigger as MatMenuTrigger } from '@angular/material/menu';
+import { MatDialog as MatDialog } from '@angular/material/dialog';
 import { GaugeAction, GaugeRangeProperty, Hmi, View, ViewProperty } from '../../_models/hmi';
+import { filter, Subject, takeUntil } from 'rxjs';
+import { MapsLocation, MAPSLOCATION_PREFIX } from '../../_models/maps';
+import { MapsLocationPropertyComponent } from '../maps-location-property/maps-location-property.component';
+import { Utils } from '../../_helpers/utils';
+import { TranslateService } from '@ngx-translate/core';
+import { ToastrService } from 'ngx-toastr';
+import { MapsLocationImportComponent } from '../maps-location-import/maps-location-import.component';
+import { MapsFabButtonMenuComponent } from './maps-fab-button-menu/maps-fab-button-menu.component';
+import { HmiService } from '../../_services/hmi.service';
 
 interface MarkerBinding {
     nodeIds: string[];
@@ -14,17 +25,6 @@ interface MarkerBinding {
         element?: HTMLElement | null;
     }[];
 };
-import { filter, Subject, takeUntil } from 'rxjs';
-import { MatLegacyMenuTrigger as MatMenuTrigger } from '@angular/material/legacy-menu';
-import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
-import { MapsLocation, MAPSLOCATION_PREFIX } from '../../_models/maps';
-import { MapsLocationPropertyComponent } from '../maps-location-property/maps-location-property.component';
-import { Utils } from '../../_helpers/utils';
-import { TranslateService } from '@ngx-translate/core';
-import { ToastrService } from 'ngx-toastr';
-import { MapsLocationImportComponent } from '../maps-location-import/maps-location-import.component';
-import { MapsFabButtonMenuComponent } from './maps-fab-button-menu/maps-fab-button-menu.component';
-import { HmiService } from '../../_services/hmi.service';
 
 @Component({
     selector: 'app-maps-view',
@@ -136,13 +136,16 @@ export class MapsViewComponent implements AfterViewInit, OnDestroy {
             const color = loc.markerColor ?? '#000000';
             const background = loc.markerBackground ?? '#ffffff';
             const icon = loc.markerIcon ? loc.markerIcon : '';
+            const image = loc.markerImage ? loc.markerImage : '';
             const nameHtml = loc.showMarkerName
                                 ? `<div class="bubble-text"
                                         style="color: var(--bubble-fg);">${loc.name}</div>`
                                 : '';
             const iconHtml = loc.showMarkerIcon
-                                ? `<span class="material-icons bubble-icon"
-                                        style="color: var(--bubble-fg);">${icon}</span>`
+                                ? image
+                                    ? `<img class="bubble-image" src="${image}" alt="">`
+                                    : `<span class="material-icons bubble-icon"
+                                            style="color: var(--bubble-fg);">${icon}</span>`
                                 : '';
             const valueHtml = loc.markerTagValueId && loc.showMarkerValue
                                 ? `<div class="bubble-value" id="${valueHtmlId}">##.##</div>`

@@ -1,6 +1,6 @@
 /* eslint-disable @angular-eslint/component-class-suffix */
 import { Component, OnInit, Inject, ViewChild, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { MatLegacyDialog as MatDialog, MatLegacyDialogRef as MatDialogRef, MAT_LEGACY_DIALOG_DATA as MAT_DIALOG_DATA } from '@angular/material/legacy-dialog';
+import { MatDialog as MatDialog, MatDialogRef as MatDialogRef, MAT_DIALOG_DATA as MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { TranslateService } from '@ngx-translate/core';
 
 import { ProjectService } from '../../_services/project.service';
@@ -273,6 +273,19 @@ export class LayoutPropertyComponent implements OnInit, OnDestroy {
 
     onNoClick(): void {
         this.dialogRef.close();
+    }
+
+    onOkClick(): void {
+        this.normalizeHeaderSize('height');
+        this.normalizeHeaderSize('buttonHeight');
+        this.dialogRef.close(this.data);
+    }
+
+    private normalizeHeaderSize(property: 'height' | 'buttonHeight'): void {
+        const value = this.data.layout.header?.[property];
+        if (value === null || value === undefined || `${value}` === '') {
+            delete (this.data.layout.header as any)[property];
+        }
     }
 
     toggleSubMenu(item: NaviItem) {

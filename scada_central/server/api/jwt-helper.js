@@ -1,9 +1,11 @@
 'use strict';
 
 const jwt = require('jsonwebtoken');
+const utils = require('../runtime/utils');
 
 var secureEnabled = false;
-var secretCode = 'frangoteam751';
+// Runtime fallback secret used only when no persistent secret is configured.
+var secretCode = utils.generateSecretCode();
 var tokenExpiresIn = 60 * 60;   // 60 minutes
 const adminGroups = [-1, 255];
 
@@ -24,12 +26,25 @@ function init(_secureEnabled, _secretCode, _tokenExpires) {
  */
 function verify (token) {
     return new Promise ((resolve, reject) => {
-        jwt.verify(token, secretCode, (err, decoded) => {
+        jwt.verify(token, secretCode, (err) => {
             if (err) {
                 console.error(`verify token error: ${err}`);
                 reject(false);
             } else {
                 resolve(true);
+            }
+        });
+    });
+}
+
+function verifyAndDecode(token) {
+    return new Promise((resolve, reject) => {
+        jwt.verify(token, secretCode, (err, decoded) => {
+            if (err) {
+                console.error(`verify token error: ${err}`);
+                reject(false);
+            } else {
+                resolve(decoded);
             }
         });
     });
@@ -53,51 +68,23 @@ function verifyToken (req, res, next) {
             if (err) {
                 req.userId = "guest";
                 req.userGroups = ["guest"];
-            } else {
-                req.userId = decoded.id;
-                req.userGroups = decoded.groups;
-                if (req.headers['x-auth-user']) {
-                    let user = JSON.parse(req.headers['x-auth-user']);
-                    if (user && user.groups != req.userGroups) {
-                        res.status(403).json({ error: "unauthorized_error", message: "User Profile Corrupted!" });
-                    }
-                }
+                req.isAuthenticated = false;
+                return next();
             }
-            next();
+            req.userId = decoded.id;
+            req.userGroups = decoded.groups;
+            req.isAuthenticated = true;
+            return next();
         });
     } else {
         // notice that no token was provided...}
         req.userId = null;
         req.userGroups = null;
-        // if (secureEnabled) {
-        //     res.status(401).json({ error: "unauthorized_error", message: "Token missing!" });
-        // }
-        next();
+        return next();
     }
 }
 
 function requireAuth (req, res, next) {
-    // Allow requests from FUXA interface (iframe embedding)
-    // Check for common FUXA referer patterns
-    const referer = req.headers.referer;
-    if (referer) {
-        // Allow if referer is from the same host (to support IP access without specific paths)
-        const requestHost = req.headers.host;
-        if (referer.startsWith(`http://${requestHost}`) || referer.startsWith(`https://${requestHost}`)) {
-            return next();
-        }
-        // Allow if referer contains common FUXA paths or is from the same server
-        const fuxaPatterns = [
-            '/fuxa', '/editor', '/viewer', '/lab', '/home',
-            'localhost:', '127.0.0.1:', '0.0.0.0:'
-        ];
-        const hasFuxaReferer = fuxaPatterns.some(pattern => referer.includes(pattern));
-        if (hasFuxaReferer) {
-            return next();
-        }
-    }
-
-    // For direct access, require authentication
     let token = req.headers['x-access-token'];
 
     if (!token) {
@@ -110,29 +97,22 @@ function requireAuth (req, res, next) {
         } else {
             req.userId = decoded.id;
             req.userGroups = decoded.groups;
-            if (req.headers['x-auth-user']) {
-                let user = JSON.parse(req.headers['x-auth-user']);
-                if (user && user.groups != req.userGroups) {
-                    return res.status(403).json({ error: "unauthorized_error", message: "User Profile Corrupted!" });
-                }
-            }
             next();
         }
     });
 }
 
-function getNewToken(headers) {
-    const authUser = (headers['x-auth-user']) ? JSON.parse(headers['x-auth-user']) : null;
-    if (authUser) {
-        return jwt.sign({
-            id: authUser.user,
-            groups: authUser.groups
-        },
-        secretCode, {
-            expiresIn: tokenExpiresIn
-        });
+function getNewTokenFromRequest(req) {
+    if (!req.isAuthenticated) {
+        return null;
     }
-    return null;
+
+    return jwt.sign({
+        id: req.userId,
+        groups: req.userGroups
+    }, secretCode, {
+        expiresIn: tokenExpiresIn
+    });
 }
 
 function getGuestToken() {
@@ -144,6 +124,16 @@ function getGuestToken() {
             expiresIn: tokenExpiresIn
         });
     return token;
+}
+
+function isGuestUser(userId, userGroups) {
+    if (userId === 'guest') {
+        return true;
+    }
+    if (Array.isArray(userGroups) && userGroups.includes('guest')) {
+        return true;
+    }
+    return false;
 }
 
 function haveAdminPermission(permission) {
@@ -163,12 +153,14 @@ function getTokenExpiresIn() {
 module.exports = {
     init: init,
     verify: verify,
+    verifyAndDecode: verifyAndDecode,
     verifyToken: verifyToken,
     requireAuth: requireAuth,
-    getNewToken: getNewToken,
+    getNewTokenFromRequest: getNewTokenFromRequest,
     getGuestToken: getGuestToken,
     get secretCode() { return secretCode },
     get tokenExpiresIn() { return tokenExpiresIn },
     haveAdminPermission: haveAdminPermission,
-    adminGroups: adminGroups
+    adminGroups: adminGroups,
+    isGuestUser: isGuestUser
 };

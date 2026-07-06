@@ -1,10 +1,10 @@
 import { Component, OnInit, AfterViewInit, ViewChild, OnDestroy } from '@angular/core';
-import { MatLegacyRow as MatRow, MatLegacyTable as MatTable, MatLegacyTableDataSource as MatTableDataSource } from '@angular/material/legacy-table';
-import { MatLegacyPaginator as MatPaginator } from '@angular/material/legacy-paginator';
-import { MatLegacyMenuTrigger as MatMenuTrigger } from '@angular/material/legacy-menu';
+import { MatRow as MatRow, MatTable as MatTable, MatTableDataSource as MatTableDataSource } from '@angular/material/table';
+import { MatPaginator as MatPaginator } from '@angular/material/paginator';
+import { MatMenuTrigger as MatMenuTrigger } from '@angular/material/menu';
 import { MatSort } from '@angular/material/sort';
 import { Utils } from '../../../../_helpers/utils';
-import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
+import { MatDialog as MatDialog } from '@angular/material/dialog';
 
 import { TranslateService } from '@ngx-translate/core';
 
@@ -74,6 +74,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     events: GaugeEvent[];
     eventSelectionType = Utils.getEnumKey(GaugeEventType, GaugeEventType.select);
     dataFilter: TableFilter | AlarmsFilter | ReportsFilter;
+    private lastRenderedSignature = '';
 
     constructor(
         private dataService: DataConverterService,
@@ -332,6 +333,11 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             }
             rows.push(alarm);
         });
+        const nextSignature = this.getTableSignature(rows);
+        if (nextSignature === this.lastRenderedSignature) {
+            return;
+        }
+        this.lastRenderedSignature = nextSignature;
         this.dataSource.data = rows;
     }
 
@@ -346,7 +352,28 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             };
             rows.push(report);
         });
+        const nextSignature = this.getTableSignature(rows);
+        if (nextSignature === this.lastRenderedSignature) {
+            return;
+        }
+        this.lastRenderedSignature = nextSignature;
         this.dataSource.data = rows;
+    }
+
+    trackByRow(index: number, row: any): string | number {
+        if (row?.name?.stringValue || row?.ontime?.stringValue) {
+            return `${row?.name?.stringValue || ''}|${row?.ontime?.stringValue || ''}|${row?.fileName || ''}`;
+        }
+        if (row?.fileName) {
+            return row.fileName;
+        }
+        if (this.displayedColumns?.length) {
+            const firstCell = row?.[this.displayedColumns[0]];
+            if (firstCell?.rowIndex !== undefined) {
+                return firstCell.rowIndex;
+            }
+        }
+        return index;
     }
 
     isSelectable(): boolean {
@@ -369,6 +396,9 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     private runScript(event: GaugeEvent, selected: MatRow) {
         if (event.actparam) {
             let torun = Utils.clone(this.projectService.getScripts().find(dataScript => dataScript.id == event.actparam));
+            if (!torun) {
+                return;
+            }
             torun.parameters = <ScriptParam[]>Utils.clone(event.actoptions[SCRIPT_PARAMS_MAP]);
             torun.parameters.forEach(param => {
                 if (Utils.isNullOrUndefined(param.value)) {
@@ -505,9 +535,14 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
         this.dataSource.sortingDataAccessor = (data, sortHeaderId) => data[sortHeaderId].stringValue;
     }
 
+    private getTableSignature(rows: any[]): string {
+        return rows.map((row) => JSON.stringify(row)).join('|');
+    }
+
     private loadData() {
         // columns
         let columnIds = [];
+        this.lastRenderedSignature = '';
         this.columnsStyle = {};
         const columns = this.isAlarmsType() ? this.tableOptions.alarmsColumns : this.isReportsType() ? this.tableOptions.reportsColumns : this.tableOptions.columns;
         columns.forEach(cn => {

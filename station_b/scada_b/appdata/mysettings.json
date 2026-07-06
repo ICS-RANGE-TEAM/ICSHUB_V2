@@ -1,19 +1,27 @@
 {
-    "language": "fr",
+    "language": "en",
+    "hideEditorOnboarding": false,
+    "editorSectionMessages": {
+        "hideDevicePluginsNotice": false,
+        "hideArMarkersNotice": false
+    },
     "uiPort": 1881,
     "secureEnabled": false,
-    "tokenExpiresIn": "",
+    "secretCode": "",
+    "tokenExpiresIn": "1h",
     "broadcastAll": false,
+    "lazyViewLoading": false,
     "smtp": {
         "host": "",
         "port": 587,
         "mailsender": "",
-        "username": "",
-        "password": ""
+        "username": ""
     },
     "daqstore": {
         "type": "SQlite",
-        "credentials": {},
+        "host": "127.0.0.1",
+        "tableName": "meters",
+        "configurationString": "http::addr=localhost:9000;",
         "retention": "year1"
     },
     "alarms": {
@@ -22,5 +30,7 @@
     "logs": {
         "retention": "none"
     },
-    "logFull": false
+    "nodeRedEnabled": false,
+    "nodeRedAuthMode": "secure",
+    "swaggerEnabled": false
 }
